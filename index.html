@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Halo On-Site Appointments & Routes</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #161616;
+    --border: #2a2a2a;
+    --text: #e8e8e8;
+    --muted: #888;
+    --accent: #3b82f6;
+    --warn: #f59e0b;
+    --good: #10b981;
+    --bad: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Geist', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.5rem; margin: 0; }
+  .sub { color: var(--muted); font-size: 0.8rem; }
+  main { flex: 1; display: grid; grid-template-columns: 420px 1fr; min-height: 0; }
+  #sidebar { border-right: 1px solid var(--border); overflow-y: auto; padding: 12px 16px; }
+  #map { height: 100%; }
+  .agent-group { margin-bottom: 24px; }
+  .agent-name {
+    font-weight: 600; font-size: 0.95rem; margin-bottom: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .day-label {
+    font-size: 0.7rem; color: var(--muted); margin: 14px 0 6px;
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 500;
+  }
+  .appt {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px 10px 36px;
+    margin-bottom: 8px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    position: relative;
+  }
+  .appt:hover { border-color: var(--accent); }
+  .appt .seq {
+    position: absolute; left: 8px; top: 12px;
+    background: var(--accent); color: white;
+    width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 600;
+  }
+  .appt .time { color: var(--accent); font-weight: 500; font-size: 0.78rem; }
+  .appt .subject { margin: 3px 0 2px; font-weight: 500; }
+  .appt .meta { color: var(--muted); font-size: 0.75rem; line-height: 1.4; }
+  .travel { color: var(--good); font-size: 0.75rem; margin-top: 5px; font-weight: 500; }
+  .warn { color: var(--warn); font-size: 0.75rem; margin-top: 4px; }
+  .route-btn {
+    background: var(--accent); color: white; border: none;
+    border-radius: 4px; padding: 3px 9px; font-size: 0.72rem;
+    cursor: pointer; font-family: inherit;
+  }
+  .route-btn:hover { background: #2563eb; }
+  .missing { color: var(--warn); }
+  .suggestions {
+    background: #1c140a;
+    border: 1px solid #3d2e12;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    font-size: 0.78rem;
+  }
+  .suggestions h3 { margin: 0 0 6px; font-size: 0.85rem; color: var(--warn); font-weight: 600; }
+  .suggestions ul { margin: 0; padding-left: 16px; }
+  .suggestions li { margin-bottom: 4px; }
+  .leaflet-popup-content { font-family: 'Geist', sans-serif; font-size: 13px; }
+  .ticket { color: #60a5fa; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>On-Site Appointments</h1>
+    <div class="sub">Halo Site Visits · Routes from Altec · Travel times · Scheduling flags</div>
+  </div>
+  <div class="sub">Numbered stops · Click for details</div>
+</header>
+<main>
+  <div id="sidebar"></div>
+  <div id="map"></div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const OFFICE = { name: "Altec Office", lat: 37.16213, lon: -93.31753, address: "1860 W Arbor St Ste 100, Springfield, MO 65807" };
+
+const appointments = [
+  { id: 22440, start: "2026-11-02T20:00:00", end: "2026-11-02T21:00:00", subject: "Need to move computer", client: "BCFO TitleWorks", site: "ShipIT", agent: "Leo Perez Negron", ticket: 23348, address: null, lat: 37.21, lon: -93.29 },
+  { id: 22226, start: "2026-11-02T20:00:00", end: "2026-11-02T22:00:00", subject: "Cooling issue with machines", client: "Corwin Ford Springfield MO", site: "Main Office", agent: "Steven Weishaar", ticket: 23200, address: null, lat: 37.21, lon: -93.30 },
+  { id: 22228, start: "2026-11-02T20:00:00", end: "2026-11-02T22:00:00", subject: "Ford store", client: "Corwin Ford Springfield MO", site: "Main Office", agent: "Steven Weishaar", ticket: 23852, address: null, lat: 37.21, lon: -93.30 },
+  { id: 22442, start: "2026-11-03T19:30:00", end: "2026-11-03T20:30:00", subject: "New PC", client: "Corwin Ford Republic MO", site: "Main Office", agent: "Leo Perez Negron", ticket: 23836, address: "1740 US-60, Republic, MO 65738", lat: 37.120, lon: -93.480 },
+  { id: 22356, start: "2026-11-04T19:30:00", end: "2026-11-04T20:30:00", subject: "Computer Issues", client: "Strafford Fire Protection District", site: "District", agent: "Leo Perez Negron", ticket: 23606, address: null, lat: 37.27, lon: -93.12 },
+  { id: 22414, start: "2026-11-04T20:00:00", end: "2026-11-04T21:00:00", subject: "Access Control System Walkthrough", client: "Fair Grove Fire Protection District", site: "Main 1", agent: "Steven Weishaar", ticket: 23962, address: "340 W Eagle Ridge Ct, Fair Grove, MO 65648", lat: 37.383, lon: -93.147 },
+  { id: 22417, start: "2026-11-04T21:15:00", end: "2026-11-04T21:45:00", subject: "CDJR user needs RAM", client: "Corwin Ford Springfield MO", site: "Main Office", agent: "Steven Weishaar", ticket: 23192, address: null, lat: 37.21, lon: -93.30 }
+];
+
+function dayKey(iso) { return iso.slice(0, 10); }
+const byAgentDay = {};
+appointments.forEach(a => {
+  const key = `${a.agent}|${dayKey(a.start)}`;
+  if (!byAgentDay[key]) byAgentDay[key] = { agent: a.agent, day: dayKey(a.start), stops: [] };
+  byAgentDay[key].stops.push(a);
+});
+Object.values(byAgentDay).forEach(g => g.stops.sort((a,b) => a.start.localeCompare(b.start)));
+
+const seqMap = {};
+Object.values(byAgentDay).forEach(g => {
+  g.stops.forEach((s, i) => { seqMap[s.id] = i + 1; });
+});
+
+function formatTime(iso) {
+  return new Date(iso).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function formatTimeShort(iso) {
+  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+function formatDuration(mins) {
+  if (mins < 60) return `${Math.round(mins)} min`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+function haversine(a, b) {
+  const R = 3958.8;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+  const x = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+function googleMapsRoute(stops) {
+  if (!stops.length) return;
+  const origin = encodeURIComponent(OFFICE.address);
+  const dest = encodeURIComponent(stops[stops.length - 1].address || stops[stops.length - 1].site);
+  const waypoints = stops.slice(0, -1).map(s => encodeURIComponent(s.address || s.site)).join("|");
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}&travelmode=driving`;
+  if (waypoints) url += `&waypoints=${waypoints}`;
+  window.open(url, "_blank");
+}
+
+function generateSuggestions() {
+  const suggestions = [];
+  const byDay = {};
+  appointments.forEach(a => {
+    const d = dayKey(a.start);
+    if (!byDay[d]) byDay[d] = [];
+    byDay[d].push(a);
+  });
+  Object.entries(byDay).forEach(([day, appts]) => {
+    for (let i = 0; i < appts.length; i++) {
+      for (let j = i + 1; j < appts.length; j++) {
+        const a = appts[i], b = appts[j];
+        if (a.agent !== b.agent) {
+          const dist = haversine(a, b);
+          if (dist < 8) {
+            suggestions.push({
+              text: `${day}: ${a.agent} and ${b.agent} both have stops within ~${dist.toFixed(1)} mi (${a.client} / ${b.client}).`,
+              proposal: `Reassign one of these to the same technician on ${day}:\n- Appointment #${a.id} (${a.subject}) — ${a.client} / ${a.site} — currently ${a.agent} — Ticket #${a.ticket || "—"}\n- Appointment #${b.id} (${b.subject}) — ${b.client} / ${b.site} — currently ${b.agent} — Ticket #${b.ticket || "—"}\nConsider moving the shorter one to the other tech.`
+            });
+          }
+        }
+      }
+    }
+  });
+  Object.values(byAgentDay).forEach(g => {
+    for (let i = 0; i < g.stops.length - 1; i++) {
+      const curr = g.stops[i], next = g.stops[i+1];
+      const gapMin = (new Date(next.start) - new Date(curr.end)) / 60000;
+      const dist = haversine(curr, next);
+      if (dist > 10 && gapMin < 45) {
+        suggestions.push({
+          text: `${g.agent} on ${g.day}: only ${Math.round(gapMin)} min between #${seqMap[curr.id]} and #${seqMap[next.id]} (~${dist.toFixed(0)} mi apart).`,
+          proposal: `Schedule buffer needed for ${g.agent} on ${g.day}:\n- After appointment #${curr.id} (${curr.subject}) — ${curr.client} — ends ${formatTimeShort(curr.end)} — Ticket #${curr.ticket || "—"}\n- Before appointment #${next.id} (${next.subject}) — ${next.client} — starts ${formatTimeShort(next.start)} — Ticket #${next.ticket || "—"}\nTravel ~${dist.toFixed(0)} mi. Consider shifting the later appointment later or reassigning.`
+        });
+      }
+    }
+  });
+  return suggestions;
+}
+
+const suggestions = generateSuggestions();
+
+const sidebar = document.getElementById("sidebar");
+if (suggestions.length) {
+  const box = document.createElement("div");
+  box.className = "suggestions";
+  box.innerHTML = `<h3>Scheduling flags</h3>`;
+  const ul = document.createElement("ul");
+  suggestions.forEach(s => {
+    const li = document.createElement("li");
+    li.style.marginBottom = "10px";
+    li.innerHTML = `
+      <div>${s.text}</div>
+      <button class="copy-btn" style="margin-top:4px;background:#374151;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:0.72rem;cursor:pointer;font-family:inherit;">Copy proposal</button>
+    `;
+    li.querySelector(".copy-btn").addEventListener("click", () => {
+      navigator.clipboard.writeText(s.proposal).then(() => {
+        const btn = li.querySelector(".copy-btn");
+        const orig = btn.textContent;
+        btn.textContent = "Copied";
+        setTimeout(() => btn.textContent = orig, 1500);
+      });
+    });
+    ul.appendChild(li);
+  });
+  box.appendChild(ul);
+  sidebar.appendChild(box);
+}
+
+const byAgent = {};
+appointments.forEach(a => { if (!byAgent[a.agent]) byAgent[a.agent] = []; byAgent[a.agent].push(a); });
+
+Object.entries(byAgent).forEach(([agent, appts]) => {
+  const group = document.createElement("div");
+  group.className = "agent-group";
+  group.innerHTML = `<div class="agent-name">${agent}<button class="route-btn" data-agent="${agent}">Open full route</button></div>`;
+
+  let lastDay = null;
+  appts.sort((a,b) => a.start.localeCompare(b.start)).forEach(a => {
+    const day = dayKey(a.start);
+    if (day !== lastDay) {
+      const label = document.createElement("div");
+      label.className = "day-label";
+      label.textContent = new Date(a.start).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+      group.appendChild(label);
+      lastDay = day;
+    }
+    const el = document.createElement("div");
+    el.className = "appt";
+    el.innerHTML = `
+      <div class="seq">${seqMap[a.id]}</div>
+      <div class="time">${formatTimeShort(a.start)} – ${formatTimeShort(a.end)}</div>
+      <div class="subject">${a.subject}</div>
+      <div class="meta"><strong>${a.client}</strong> · ${a.site}<br>
+      <span class="ticket"><a href="https://altecusa.halopsa.com/tickets?id=${a.ticket}" target="_blank" style="color:#60a5fa;text-decoration:none;">Ticket #${a.ticket || "—"}</a></span>
+      ${a.address ? `<br>${a.address}` : `<br><span class="missing">No address in Halo</span>`}
+      </div>
+      <div class="travel" id="travel-${a.id}"></div>
+    `;
+    el.addEventListener("click", () => { map.setView([a.lat, a.lon], 13); markers[a.id].openPopup(); });
+    group.appendChild(el);
+  });
+  sidebar.appendChild(group);
+});
+
+document.querySelectorAll(".route-btn").forEach(btn => {
+  btn.addEventListener("click", () => googleMapsRoute(byAgent[btn.dataset.agent]));
+});
+
+const map = L.map("map").setView([37.21, -93.29], 10);
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+  attribution: 'Tiles &copy; Esri'
+}).addTo(map);
+
+L.marker([OFFICE.lat, OFFICE.lon], {
+  icon: L.divIcon({ className: "", html: `<div style="background:#ef4444;color:white;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap;">Altec</div>`, iconSize: [50, 20], iconAnchor: [25, 10] })
+}).addTo(map).bindPopup(`<b>Altec Office</b><br>${OFFICE.address}`);
+
+const markers = {};
+const colors = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
+const agentColor = {};
+let colorIdx = 0;
+
+appointments.forEach(a => {
+  if (!agentColor[a.agent]) { agentColor[a.agent] = colors[colorIdx % colors.length]; colorIdx++; }
+  const seq = seqMap[a.id];
+  const marker = L.marker([a.lat, a.lon], {
+    icon: L.divIcon({
+      className: "",
+      html: `<div style="background:${agentColor[a.agent]};color:white;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.4);">${seq}</div>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13]
+    })
+  }).addTo(map);
+  marker.bindPopup(`
+    <b>#${seq} · ${a.subject}</b><br>
+    <strong>${a.client}</strong> · ${a.site}<br>
+    ${formatTime(a.start)} – ${formatTimeShort(a.end)}<br>
+    <span class="ticket"><a href="https://altecusa.halopsa.com/tickets?id=${a.ticket}" target="_blank" style="color:#60a5fa;text-decoration:none;">Ticket #${a.ticket || "—"}</a></span><br>
+    <span style="color:#666">${a.agent}</span>
+    <div id="popup-travel-${a.id}" style="margin-top:6px;color:#10b981;font-size:12px;"></div>
+  `);
+  markers[a.id] = marker;
+});
+
+async function getRoute(from, to) {
+  const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.routes && data.routes[0]) {
+      return {
+        coords: data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]),
+        duration: data.routes[0].duration / 60
+      };
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function drawAllRoutes() {
+  for (const group of Object.values(byAgentDay)) {
+    const color = agentColor[group.agent] || "#3b82f6";
+    let prev = OFFICE;
+    for (const stop of group.stops) {
+      const route = await getRoute(prev, stop);
+      if (route) {
+        L.polyline(route.coords, { color, weight: 4, opacity: 0.75 }).addTo(map);
+        const label = `Travel: ${formatDuration(route.duration)}`;
+        const el = document.getElementById(`travel-${stop.id}`);
+        if (el) el.textContent = label;
+        const pop = document.getElementById(`popup-travel-${stop.id}`);
+        if (pop) pop.textContent = label;
+      }
+      prev = stop;
+    }
+  }
+  const all = [OFFICE, ...appointments];
+  map.fitBounds(all.map(p => [p.lat, p.lon]), { padding: [30, 30] });
+}
+
+drawAllRoutes();
+</script>
+</body>
+</html>
